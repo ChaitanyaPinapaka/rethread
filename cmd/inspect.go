@@ -15,12 +15,12 @@ var inspectCmd = &cobra.Command{
 }
 
 func runInspect(cmd *cobra.Command, args []string) error {
-	session, err := internal.FindSession(args[0])
+	session, err := findSession(args[0])
 	if err != nil {
 		return err
 	}
 
-	turns, err := internal.ReadTurns(session.FilePath, false)
+	turns, err := readTurns(session)
 	if err != nil {
 		return err
 	}
@@ -43,16 +43,17 @@ func runInspect(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Fits in context:  %s\n\n", fits)
 
 	rec := a.RecommendedStrategy
+	fmt.Println("  Recommended export strategy:")
 	switch rec.Kind {
 	case "full":
-		fmt.Println("  Recommended: full replay (fits in context window)")
-		fmt.Printf("    rethread fork %s\n", args[0])
+		fmt.Println("  - Full export (entire conversation)")
+		fmt.Printf("    rethread export %s -f clean -o %s-full.jsonl\n", args[0], args[0])
 	case "prune":
-		fmt.Printf("  Recommended: prune (remove %d low-signal turns)\n", a.LowSignalTurns)
-		fmt.Printf("    rethread fork %s --prune\n", args[0])
+		fmt.Printf("  - Pruned export (removes %d low-signal turns)\n", a.LowSignalTurns)
+		fmt.Printf("    rethread export %s --prune -f clean -o %s-pruned.jsonl\n", args[0], args[0])
 	case "last":
-		fmt.Printf("  Recommended: last %d turns (conversation too long for full replay)\n", rec.N)
-		fmt.Printf("    rethread fork %s --turns %d\n", args[0], rec.N)
+		fmt.Printf("  - Partial export (last %d turns)\n", rec.N)
+		fmt.Printf("    rethread export %s --turns %d -f clean -o %s-last%d.jsonl\n", args[0], rec.N, args[0], rec.N)
 	}
 
 	fmt.Println()

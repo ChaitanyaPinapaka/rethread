@@ -57,20 +57,10 @@ type SessionMeta struct {
 
 // SelectionStrategy determines which turns to include.
 type SelectionStrategy struct {
-	Kind          string // "full", "last", "prune", "range"
-	N             int    // for "last"
-	MinTokens     int    // for "prune"
-	From          int    // for "range"
-	To            int    // for "range"
-}
-
-// ReplayContext is the fully resolved set of turns to inject.
-type ReplayContext struct {
-	SourceSessionID    string
-	SourceProject      string
-	Turns              []Turn
-	Strategy           SelectionStrategy
-	TotalTokenEstimate int
+	Kind string // "full", "last", "prune", "range"
+	N    int    // for "last"
+	From int    // for "range"
+	To   int    // for "range"
 }
 
 // TurnAnalysis is the result of inspecting a session's turns.
@@ -83,13 +73,4 @@ type TurnAnalysis struct {
 	TotalTokenEstimate  int
 	FitsInContext        bool
 	RecommendedStrategy SelectionStrategy
-}
-
-// InjectResult describes what happened when we injected context.
-type InjectResult struct {
-	Mode           string // "native-fork", "context-injection", "dry-run"
-	SessionID      string
-	ContextFile    string
-	TokenEstimate  int
-	TurnCount      int
 }

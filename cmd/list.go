@@ -3,15 +3,15 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
-	"github.com/ChaitanyaPinapaka/rethread/internal"
 	"github.com/spf13/cobra"
 )
 
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List available Claude Code sessions",
+	Short: "List available AI CLI sessions",
 	RunE:  runList,
 }
 
@@ -28,7 +28,7 @@ func init() {
 }
 
 func runList(cmd *cobra.Command, args []string) error {
-	sessions, err := internal.ListSessions(listProject)
+	sessions, err := listAllSessions(listProject)
 	if err != nil {
 		return err
 	}
@@ -40,6 +40,11 @@ func runList(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	}
+
+	// Sort combined results by most recent first
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].LastTimestamp.After(sessions[j].LastTimestamp)
+	})
 
 	display := sessions
 	if listLimit > 0 && listLimit < len(display) {
@@ -56,7 +61,12 @@ func runList(cmd *cobra.Command, args []string) error {
 			id = id[:8]
 		}
 
-		fmt.Printf("  %s  %-18s  %3d turns  %s\n", id, date, s.TurnCount, project)
+		src := "claude"
+		if isGeminiSession(&s) {
+			src = "gemini"
+		}
+
+		fmt.Printf("  %s  %-18s  %3d turns  %-8s %s\n", id, date, s.TurnCount, src, project)
 
 		if listVerbose {
 			fmt.Printf("           %s\n", s.Preview)
@@ -65,8 +75,8 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println()
-	fmt.Println("  Use \"rethread fork <id>\" to replay a session into a new one.")
-	fmt.Println("  Use \"rethread inspect <id>\" to analyze turns before forking.")
+	fmt.Println("  Use \"rethread inspect <id>\" to analyze a session's turns.")
+	fmt.Println("  Use \"rethread export <id>\" to export a session to a file.")
 	fmt.Println()
 
 	return nil

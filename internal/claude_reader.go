@@ -85,54 +85,6 @@ func ListSessions(projectFilter string) ([]SessionMeta, error) {
 	return sessions, nil
 }
 
-// FindSession locates a session by ID or prefix.
-func FindSession(sessionID string) (*SessionMeta, error) {
-	sessions, err := ListSessions("")
-	if err != nil {
-		return nil, err
-	}
-
-	// Exact match
-	for i := range sessions {
-		if sessions[i].ID == sessionID {
-			return &sessions[i], nil
-		}
-	}
-
-	// Prefix match
-	var matches []SessionMeta
-	for _, s := range sessions {
-		if strings.HasPrefix(s.ID, sessionID) {
-			matches = append(matches, s)
-		}
-	}
-
-	switch len(matches) {
-	case 0:
-		return nil, fmt.Errorf("session not found: %q", sessionID)
-	case 1:
-		return &matches[0], nil
-	default:
-		lines := make([]string, len(matches))
-		for i, m := range matches {
-			lines[i] = fmt.Sprintf("  %s (%s)", m.ID, m.ProjectPath)
-		}
-		return nil, fmt.Errorf("ambiguous session ID %q. Matches:\n%s", sessionID, strings.Join(lines, "\n"))
-	}
-}
-
-// GetLastSession returns the most recent session.
-func GetLastSession(projectFilter string) (*SessionMeta, error) {
-	sessions, err := ListSessions(projectFilter)
-	if err != nil {
-		return nil, err
-	}
-	if len(sessions) == 0 {
-		return nil, fmt.Errorf("no sessions found")
-	}
-	return &sessions[0], nil
-}
-
 // ReadTurns streams a session JSONL file and returns parsed conversation turns.
 // Filters to user/assistant on the main thread by default.
 func ReadTurns(filePath string, includeSidechains bool) ([]Turn, error) {
@@ -218,9 +170,23 @@ func ExtractText(content interface{}) string {
 // --- internal helpers ---
 
 func decodeProjectPath(encoded string) string {
+	// Unix: "-Users-alice-my-project" → "/Users/alice/my-project"
+	//   Leading "-" means the original path started with "/"
 	if strings.HasPrefix(encoded, "-") {
-		return strings.ReplaceAll(encoded, "-", "/")
+		return "/" + strings.ReplaceAll(encoded[1:], "-", "/")
 	}
+
+	// Windows: "c--Work-my-project" → "C:\Work\my-project"
+	//   Pattern: single letter + "--" = drive letter + ":\"
+	if len(encoded) >= 3 && encoded[1] == '-' && encoded[2] == '-' {
+		drive := strings.ToUpper(string(encoded[0]))
+		rest := encoded[3:]
+		if rest == "" {
+			return drive + ":\\"
+		}
+		return drive + ":\\" + strings.ReplaceAll(rest, "-", "\\")
+	}
+
 	return encoded
 }
 
@@ -235,10 +201,10 @@ func buildSessionMeta(sessionID, encodedPath, decodedPath, filePath string) (Ses
 	scanner.Buffer(make([]byte, 0, 1024*1024), 16*1024*1024)
 
 	var (
-		firstEvent *RawEvent
-		lastEvent  *RawEvent
-		turnCount  int
-		preview    string
+		firstEvent    *RawEvent
+		lastConvEvent *RawEvent
+		turnCount     int
+		preview       string
 	)
 
 	for scanner.Scan() {
@@ -255,7 +221,10 @@ func buildSessionMeta(sessionID, encodedPath, decodedPath, filePath string) (Ses
 		if firstEvent == nil {
 			firstEvent = &event
 		}
-		lastEvent = &event
+
+		if (event.Type == "user" || event.Type == "assistant") && event.Timestamp != "" {
+			lastConvEvent = &event
+		}
 
 		if event.Type == "user" || event.Type == "assistant" {
 			turnCount++
@@ -276,7 +245,16 @@ func buildSessionMeta(sessionID, encodedPath, decodedPath, filePath string) (Ses
 	}
 
 	firstTime, _ := time.Parse(time.RFC3339Nano, firstEvent.Timestamp)
-	lastTime, _ := time.Parse(time.RFC3339Nano, lastEvent.Timestamp)
+	var lastTime time.Time
+	if lastConvEvent != nil {
+		lastTime, _ = time.Parse(time.RFC3339Nano, lastConvEvent.Timestamp)
+	}
+
+	if lastTime.IsZero() {
+		if info, err := os.Stat(filePath); err == nil {
+			lastTime = info.ModTime()
+		}
+	}
 
 	return SessionMeta{
 		ID:             sessionID,
@@ -284,8 +262,8 @@ func buildSessionMeta(sessionID, encodedPath, decodedPath, filePath string) (Ses
 		EncodedPath:    encodedPath,
 		FilePath:       filePath,
 		TurnCount:      turnCount,
-		FirstTimestamp:  firstTime,
-		LastTimestamp:   lastTime,
+		FirstTimestamp: firstTime,
+		LastTimestamp:  lastTime,
 		Preview:        preview,
 	}, nil
 }

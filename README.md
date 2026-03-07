@@ -1,18 +1,25 @@
 # rethread
 
-Selective replay of Claude Code conversations into new sessions.
+Selective export of AI CLI conversations from **Claude Code** and **Gemini CLI**.
 
 ## The Problem
 
-When a Claude Code chat stays open, every follow-up benefits from the full conversation history — the reasoning, the dead ends, the texture of how decisions were made. When you manually write context to a file and load it in a new session, you lose all of that. Same information, worse results.
+AI CLI conversation histories are valuable, but they are often trapped in formats that are difficult to reuse. `rethread` allows you to list, inspect, and export these sessions into clean, usable formats like Markdown or minimal JSONL.
 
-This happens for two reasons:
+This enables you to:
+-   Document a conversation.
+-   Share it with teammates.
+-   Use it as context for another model or a different AI tool.
+-   Analyze the conversation's structure and content.
 
-1. **Lossy compression.** Writing context to a file keeps facts and decisions but loses the reasoning embedded in assistant replies, the sequence of ruled-out alternatives, and how settled each decision was.
+## Supported Sources
 
-2. **Lost in the Middle.** Models attend most to the beginning and end of their context window. A context file loaded at the start gets pushed into the middle as conversation grows — exactly where attention is lowest. ([Liu et al., 2023](https://arxiv.org/abs/2307.03172))
+| Tool          | Storage Location                             | Format                     | Auto-detected |
+| ------------- | -------------------------------------------- | -------------------------- | ------------- |
+| **Claude Code** | `~/.claude/projects/<encoded-path>/*.jsonl` | JSONL (one event per line) | Yes           |
+| **Gemini CLI**  | `~/.gemini/tmp/<project-hash>/chats/*.json`  | JSON (session object)      | Yes           |
 
-**rethread** solves this by replaying selected conversation turns — with their original structure intact — into a new session. No summarization, no flattening. The model sees structured `[user]...[assistant]...` turns, not a document.
+By default, rethread auto-detects and lists sessions from all installed sources. Use `--source claude` or `--source gemini` to filter.
 
 ## Install
 
@@ -28,13 +35,23 @@ cd rethread
 go build -o rethread .
 ```
 
-Single binary. No runtime. Sub-millisecond startup.
+## Global Flags
+
+| Flag       | Default | Description                                  |
+| ---------- | ------- | -------------------------------------------- |
+| `--source` | `auto`  | Session source: `claude`, `gemini`, `auto` (both) |
+
+```bash
+rethread list --source gemini       # only Gemini CLI sessions
+rethread list --source claude       # only Claude Code sessions
+rethread list                       # both (auto-detect)
+```
 
 ## Commands
 
 ### `rethread list`
 
-Discover and list available Claude Code sessions.
+Discover and list available sessions from all sources.
 
 ```bash
 rethread list                        # list all sessions (most recent first)
@@ -43,136 +60,86 @@ rethread list -n 5                   # show only 5 sessions
 rethread list -v                     # verbose: show preview and file path
 ```
 
-| Flag | Short | Default | Description |
-|------|-------|---------|-------------|
-| `--project` | `-p` | | Filter by project path (substring match) |
-| `--limit` | `-n` | `15` | Max sessions to show |
-| `--verbose` | `-v` | `false` | Show first message preview and file path |
+| Flag        | Short | Default | Description                                |
+| ----------- | ----- | ------- | ------------------------------------------ |
+| `--project` | `-p`  |         | Filter by project path (substring match)   |
+| `--limit`   | `-n`  | `15`    | Max sessions to show                       |
+| `--verbose` | `-v`  | `false` | Show first message preview and file path |
 
 **Output:**
 
 ```
-  Sessions (4 of 4):
+  Sessions (6 of 6):
 
-  d0873f7a  Mar 07 02:55   83 turns  Work/rethread
-  46a4f397  Mar 02 04:36    3 turns  Work/personal-blog
-  52621718  Mar 02 04:34   14 turns  Work/personal-blog
-  1c1e0625  Mar 02 04:10  314 turns  Work/personal-blog
+  d0873f7a  Mar 07 05:58  268 turns  claude   c--Work-rethread
+  46a4f397  Mar 02 04:36    3 turns  claude   c--Work-personal-blog
+  1c1e0625  Mar 02 04:10  314 turns  claude   c--Work-personal-blog
+  b3cc573d  Feb 17 01:26    8 turns  gemini   gemini:744858f965d4
+  620bb439  Jan 12 05:15    6 turns  gemini   gemini:13905c9c7c3a
+  daeb08c8  Jan 12 04:21    5 turns  gemini   gemini:13905c9c7c3a
 ```
-
-Session IDs can be used as prefixes — `d087` is enough if unambiguous.
 
 ---
 
 ### `rethread inspect`
 
-Analyze a session's turns and get a recommended replay strategy.
+Analyze a session's turns and get a recommended export strategy.
 
 ```bash
-rethread inspect d0873f7a
-rethread inspect d087                # prefix match works
+rethread inspect d0873f7a            # Inspect a Claude Code session
+rethread inspect daeb08c8            # Inspect a Gemini CLI session
 ```
 
 **Output:**
 
 ```
   Session: d0873f7a-...
-  Project: /Work/rethread
+  Project: c--Work-rethread
 
-  Total turns:      83
-    User:           40
-    Assistant:      43
-    Sidechain:       0
-    Low-signal:      2
-  Token estimate:   ~45000
+  Total turns:      268
+    User:           130
+    Assistant:      138
+    Low-signal:     5
+  Token estimate:   ~85000
   Fits in context:  yes
 
-  Recommended: full replay (fits in context window)
-    rethread fork d0873f7a
+  Recommended export strategy:
+  - Full export (entire conversation)
+    rethread export d0873f7a -f clean -o d0873f7a-full.jsonl
 ```
-
----
-
-### `rethread fork`
-
-Fork a session into a new Claude Code session. The main command.
-
-```bash
-# Basic usage
-rethread fork abc123                 # full replay of session
-rethread fork --last                 # most recent session
-rethread fork                        # same as --last
-
-# Selection strategies
-rethread fork abc123 --turns 20      # last 20 turns only
-rethread fork abc123 --prune         # drop acknowledgments and filler
-rethread fork abc123 --prune --prune-threshold 50  # custom threshold
-
-# Preview before launching
-rethread fork abc123 --dry-run
-
-# Write to file instead of launching
-rethread fork abc123 -o context.md -f markdown
-rethread fork abc123 -o session.jsonl -f jsonl
-rethread fork abc123 -o cleaned.jsonl -f clean
-
-# Start with a prompt
-rethread fork abc123 -p "Continue from where we left off on the auth module"
-```
-
-| Flag | Short | Default | Description |
-|------|-------|---------|-------------|
-| `--last` | | `false` | Use the most recent session |
-| `--turns` | `-t` | `0` (all) | Replay only the last N turns |
-| `--prune` | | `false` | Auto-prune low-signal turns |
-| `--prune-threshold` | | `30` | Token threshold for pruning |
-| `--dry-run` | | `false` | Preview what would be replayed |
-| `--prompt` | `-p` | | Initial prompt for the new session |
-| `--output` | `-o` | | Write to file instead of launching |
-| `--format` | `-f` | `turns` | Output format: `turns`, `jsonl`, `clean`, `markdown` |
-
-**Injection modes** (chosen automatically):
-
-- **Native fork** — Full replay within the same project. Uses `claude --resume`.
-- **Context injection** — For pruned/selected turns. Formats as structured XML and pipes to a new `claude` session.
 
 ---
 
 ### `rethread export`
 
-Export a session to a file or stdout.
+Export a session to a file or stdout, optionally pruning or selecting turns.
 
 ```bash
 # Export as markdown (default)
-rethread export abc123
 rethread export abc123 -o conversation.md
 
-# Export as JSONL (native Claude Code format)
-rethread export abc123 -f jsonl > full.jsonl
-
-# Export as clean JSONL (text + thinking + tool_use, no tool_result noise)
+# Export as "clean" JSONL (ideal for cross-model use)
 rethread export abc123 -f clean -o cleaned.jsonl
 
 # Export with selection
-rethread export abc123 -f clean -t 20           # last 20 turns
-rethread export abc123 -f markdown --prune       # pruned
+rethread export abc123 -f clean --turns 20    # last 20 turns
+rethread export abc123 -f markdown --prune  # pruned
 ```
 
-| Flag | Short | Default | Description |
-|------|-------|---------|-------------|
-| `--format` | `-f` | `markdown` | Output format: `turns`, `jsonl`, `clean`, `markdown` |
-| `--output` | `-o` | stdout | Output file path |
-| `--turns` | `-t` | `0` (all) | Export only the last N turns |
-| `--prune` | | `false` | Prune low-signal turns before export |
+| Flag     | Short | Default    | Description                                            |
+| -------- | ----- | ---------- | ------------------------------------------------------ |
+| `--format` | `-f`  | `markdown` | Output format: `jsonl`, `clean`, `markdown`              |
+| `--output` | `-o`  | stdout     | Output file path                                       |
+| `--turns`  | `-t`  | `0` (all)  | Export only the last N turns                         |
+| `--prune`  |       | `false`    | Prune low-signal (acknowledgment) turns before export |
 
 ## Output Formats
 
-| Format | Description | Use case |
-|--------|-------------|----------|
-| `turns` | Structured XML with `<turn role="...">` tags | Injection into Claude Code |
-| `jsonl` | Full native Claude Code format with all fields | Tooling, backup, replay |
-| `clean` | Minimal JSONL — keeps `text`, `thinking`, `tool_use`; drops `tool_result`, signatures, metadata | Cross-model use (Gemini, GPT), analysis |
-| `markdown` | Human-readable with role headers and timestamps | Documentation, review, sharing |
+| Format     | Description                                                                          | Use case                                   |
+| ---------- | ------------------------------------------------------------------------------------ | ------------------------------------------ |
+| `jsonl`    | Full native format with all fields (Claude only).                                    | Tooling, backup, exact replay              |
+| `clean`    | Minimal JSONL — keeps `text`, `thinking`, `tool_use`; drops `tool_result`, signatures. | Cross-model use (Gemini, GPT), analysis    |
+| `markdown` | Human-readable with role headers.                                                    | Documentation, review, sharing             |
 
 ### `clean` format example
 
@@ -182,65 +149,23 @@ rethread export abc123 -f markdown --prune       # pruned
 {"role":"assistant","content":[{"type":"tool_use","name":"Glob","input":{"pattern":"**/*.go"}}]}
 {"role":"assistant","content":[{"type":"text","text":"This is a CLI tool that..."}]}
 ```
-
-Strips out `tool_result` (raw file dumps that inflate size), cryptographic `signature` blobs from thinking blocks, and all metadata (`uuid`, `parentUuid`, `timestamp`, `isSidechain`).
+Both Claude and Gemini sessions are normalized to this same unified format.
 
 ## How It Works
 
 ### Reading
-
-rethread reads Claude Code's local conversation history from `~/.claude/projects/`. Each session is a JSONL file where every line is a conversation event with role, content, timestamp, and parent/child relationships. Files are streamed line-by-line with `bufio.Scanner` — no need to load entire sessions into memory.
+`rethread` reads local conversation history and normalizes it into a common `Turn` structure, so selection and export work identically regardless of the source.
 
 ### Selecting
+Three selection strategies are available for export:
 
-Four selection strategies:
+| Strategy   | Flag        | What it does                                                                       |
+| ---------- | ----------- | ---------------------------------------------------------------------------------- |
+| Full       | *(default)* | Every turn, verbatim.                                                              |
+| Last N     | `--turns N` | The most recent N turns.                                                           |
+| Prune      | `--prune`   | Drops simple acknowledgment turns (e.g., "ok", "sounds good", "got it"). |
 
-| Strategy | Flag | What it does |
-|----------|------|-------------|
-| Full | *(default)* | Every turn, verbatim |
-| Last N | `--turns N` | Most recent N turns |
-| Prune | `--prune` | Drop acknowledgments and filler |
-| Range | *(programmatic)* | Explicit turn range |
-
-**Pruning rules:** A turn is dropped only if it's under a token threshold AND matches acknowledgment patterns (e.g., "ok", "sounds good", "got it"). Turns containing code, URLs, or file paths are never pruned. First 2 and last 2 turns are always preserved.
-
-### Token Budget
-
-When selected turns exceed the context window (~150k tokens with margin), rethread uses a **skeleton + recent** strategy:
-
-1. Keep the first 2 turns (problem statement / initial direction)
-2. Fill remaining budget from the end (most recent turns)
-
-This maps to the "Lost in the Middle" research: beginning sets the frame, end has the live context.
-
-## Design Principles
-
-1. **Never summarize.** We include a turn verbatim or drop it entirely. No rewriting.
-2. **Structure over prose.** The model processes `[user]...[assistant]...` turns differently from a document. Preserve the structure.
-3. **Recent > old.** When budget is tight, keep the end of the conversation where attention is highest.
-4. **Pruning ≠ compression.** Removing "ok sounds good" is not the same as summarizing a design discussion. One is noise removal, the other is lossy compression.
-
-## How Claude Code Stores Conversations
-
-```
-~/.claude/
-  projects/
-    -Users-alice-myproject/       # encoded project path
-      abc123-def456.jsonl         # one file per session
-```
-
-Each JSONL line:
-```json
-{
-  "type": "user",
-  "message": { "role": "user", "content": "..." },
-  "timestamp": "2025-06-02T18:46:59.937Z",
-  "uuid": "...",
-  "parentUuid": "...",
-  "isSidechain": false,
-  "sessionId": "abc123-def456"
-}
-```
+When a selection exceeds the context window of most models (~150k tokens), the `inspect` command will recommend a `last N` strategy.
 
 ## License
 

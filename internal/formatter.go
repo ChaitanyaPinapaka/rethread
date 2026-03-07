@@ -7,25 +7,6 @@ import (
 	"time"
 )
 
-// FormatForInjection builds the full injection prompt with structured turns.
-func FormatForInjection(ctx ReplayContext) string {
-	var b strings.Builder
-
-	b.WriteString(injectionHeader(ctx))
-	b.WriteString("\n\n")
-
-	for i, turn := range ctx.Turns {
-		if i > 0 {
-			b.WriteString("\n\n")
-		}
-		b.WriteString(formatTurnStructured(turn))
-	}
-
-	b.WriteString("\n\n</prior_conversation>")
-
-	return b.String()
-}
-
 // FormatForExport formats turns in the requested output format.
 func FormatForExport(turns []Turn, format string, sessionID, projectPath string) string {
 	switch format {
@@ -40,31 +21,7 @@ func FormatForExport(turns []Turn, format string, sessionID, projectPath string)
 	}
 }
 
-// BuildInjectionPrompt wraps the replay context with an optional new prompt.
-func BuildInjectionPrompt(ctx ReplayContext, newPrompt string) string {
-	formatted := FormatForInjection(ctx)
-
-	if newPrompt == "" {
-		return formatted + "\n\nContinue from this conversation context. What would you like to work on next?"
-	}
-
-	return formatted + "\n\n" + newPrompt
-}
-
-// --- structured turns (injection format) ---
-
-func injectionHeader(ctx ReplayContext) string {
-	return fmt.Sprintf(`<prior_conversation>
-<!-- This is a continuation from a previous session (%s).
-     Project: %s
-     Turns: %d (%s)
-     The conversation below is your prior context. Treat it as history -->`,
-		ctx.SourceSessionID,
-		ctx.SourceProject,
-		len(ctx.Turns),
-		describeStrategy(ctx.Strategy),
-	)
-}
+// --- structured turns (XML format) ---
 
 func formatTurnStructured(turn Turn) string {
 	ts := ""
@@ -226,21 +183,4 @@ func formatMarkdown(turns []Turn, sessionID, projectPath string) string {
 	}
 
 	return b.String()
-}
-
-// --- helpers ---
-
-func describeStrategy(s SelectionStrategy) string {
-	switch s.Kind {
-	case "full":
-		return "full replay"
-	case "last":
-		return fmt.Sprintf("last %d turns", s.N)
-	case "prune":
-		return "pruned (low-signal turns removed)"
-	case "range":
-		return fmt.Sprintf("turns %d–%d", s.From, s.To)
-	default:
-		return s.Kind
-	}
 }

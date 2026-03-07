@@ -24,19 +24,19 @@ var (
 )
 
 func init() {
-	exportCmd.Flags().StringVarP(&exportFormat, "format", "f", "markdown", "Output format: turns, jsonl, clean, markdown")
+	exportCmd.Flags().StringVarP(&exportFormat, "format", "f", "jsonl", "Output format: jsonl, clean, markdown, turns")
 	exportCmd.Flags().StringVarP(&exportOutput, "output", "o", "", "Output file path (default: stdout)")
 	exportCmd.Flags().IntVarP(&exportTurns, "turns", "t", 0, "Export only the last N turns")
 	exportCmd.Flags().BoolVar(&exportPrune, "prune", false, "Prune low-signal turns before export")
 }
 
 func runExport(cmd *cobra.Command, args []string) error {
-	session, err := internal.FindSession(args[0])
+	session, err := findSession(args[0])
 	if err != nil {
 		return err
 	}
 
-	turns, err := internal.ReadTurns(session.FilePath, false)
+	turns, err := readTurns(session)
 	if err != nil {
 		return err
 	}
@@ -45,7 +45,7 @@ func runExport(cmd *cobra.Command, args []string) error {
 	if exportTurns > 0 {
 		strategy = internal.SelectionStrategy{Kind: "last", N: exportTurns}
 	} else if exportPrune {
-		strategy = internal.SelectionStrategy{Kind: "prune", MinTokens: 30}
+		strategy = internal.SelectionStrategy{Kind: "prune"}
 	}
 
 	selected := internal.SelectTurns(turns, strategy, 1<<30)

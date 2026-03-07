@@ -6,8 +6,7 @@ import (
 )
 
 const (
-	DefaultTokenBudget  = 150_000
-	LowSignalThreshold  = 30
+	DefaultTokenBudget = 150_000
 )
 
 // SelectTurns applies a selection strategy and enforces token budget.
@@ -31,7 +30,7 @@ func SelectTurns(turns []Turn, strategy SelectionStrategy, tokenBudget int) []Tu
 			copy(selected, turns[len(turns)-strategy.N:])
 		}
 	case "prune":
-		selected = pruneLowSignal(turns, strategy.MinTokens)
+		selected = pruneLowSignal(turns, 0)
 	case "range":
 		to := strategy.To + 1
 		if to > len(turns) {
@@ -85,6 +84,8 @@ func AnalyzeTurns(turns []Turn) TurnAnalysis {
 
 // --- acknowledgment patterns ---
 
+var filePathPattern = regexp.MustCompile(`[/\\]\w+\.\w+`)
+
 var ackPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)^(ok|okay|yes|yeah|yep|sure|got it|thanks|thank you|cool|nice|great|good|perfect|right|agreed|exactly|correct)\.?$`),
 	regexp.MustCompile(`(?i)^(sounds good|makes sense|let'?s do it|go ahead|lgtm|looks good|that works|works for me)\.?$`),
@@ -92,10 +93,6 @@ var ackPatterns = []*regexp.Regexp{
 }
 
 func isLowSignal(turn Turn) bool {
-	if turn.TokenEstimate > LowSignalThreshold {
-		return false
-	}
-
 	text := strings.TrimSpace(strings.ToLower(turn.ContentText))
 	if text == "" {
 		return false
@@ -112,10 +109,7 @@ func isLowSignal(turn Turn) bool {
 
 // --- pruning ---
 
-func pruneLowSignal(turns []Turn, threshold int) []Turn {
-	if threshold == 0 {
-		threshold = LowSignalThreshold
-	}
+func pruneLowSignal(turns []Turn, _ int) []Turn {
 	if len(turns) <= 4 {
 		result := make([]Turn, len(turns))
 		copy(result, turns)
@@ -150,18 +144,12 @@ func pruneLowSignal(turns []Turn, threshold int) []Turn {
 			keep[i] = true
 			continue
 		}
-		if matched, _ := regexp.MatchString(`[/\\]\w+\.\w+`, text); matched {
+		if filePathPattern.MatchString(text) {
 			keep[i] = true
 			continue
 		}
 
-		// Keep high-signal turns
-		if turn.TokenEstimate > threshold {
-			keep[i] = true
-			continue
-		}
-
-		// Check acknowledgment patterns
+		// Only drop if it matches acknowledgment patterns
 		if !isLowSignal(turn) {
 			keep[i] = true
 		}
@@ -253,9 +241,9 @@ func recommendStrategy(turns []Turn, totalTokens int) SelectionStrategy {
 	}
 
 	// Try pruning
-	pruned := pruneLowSignal(turns, LowSignalThreshold)
+	pruned := pruneLowSignal(turns, 0)
 	if sumTokens(pruned) <= DefaultTokenBudget {
-		return SelectionStrategy{Kind: "prune", MinTokens: LowSignalThreshold}
+		return SelectionStrategy{Kind: "prune"}
 	}
 
 	// Fall back to last N
