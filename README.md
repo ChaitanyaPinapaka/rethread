@@ -27,6 +27,16 @@ By default, rethread auto-detects and lists sessions from all installed sources.
 go install github.com/ChaitanyaPinapaka/rethread@latest
 ```
 
+This places the binary in `$GOPATH/bin` (or `$HOME/go/bin` by default). Make sure it's in your `PATH`:
+
+```bash
+# Linux / macOS (add to ~/.bashrc or ~/.zshrc)
+export PATH="$PATH:$(go env GOPATH)/bin"
+
+# Windows (PowerShell — run once as admin)
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";" + (go env GOPATH) + "\bin", "User")
+```
+
 Or build from source:
 
 ```bash
@@ -35,11 +45,14 @@ cd rethread
 go build -o rethread .
 ```
 
+Then move the binary to a directory in your `PATH`, or run it directly with `./rethread`.
+
 ## Global Flags
 
-| Flag       | Default | Description                                  |
-| ---------- | ------- | -------------------------------------------- |
-| `--source` | `auto`  | Session source: `claude`, `gemini`, `auto` (both) |
+| Flag        | Default | Description                                       |
+| ----------- | ------- | ------------------------------------------------- |
+| `--source`  | `auto`  | Session source: `claude`, `gemini`, `auto` (both) |
+| `--version` |         | Print version and exit                            |
 
 ```bash
 rethread list --source gemini       # only Gemini CLI sessions
@@ -99,6 +112,7 @@ rethread inspect daeb08c8            # Inspect a Gemini CLI session
   Total turns:      268
     User:           130
     Assistant:      138
+    Sidechain:      0
     Low-signal:     5
   Token estimate:   ~85000
   Fits in context:  yes
@@ -115,31 +129,38 @@ rethread inspect daeb08c8            # Inspect a Gemini CLI session
 Export a session to a file or stdout, optionally pruning or selecting turns.
 
 ```bash
-# Export as markdown (default)
-rethread export abc123 -o conversation.md
+# Export as JSONL (default)
+rethread export abc123 -o conversation.jsonl
 
 # Export as "clean" JSONL (ideal for cross-model use)
 rethread export abc123 -f clean -o cleaned.jsonl
 
+# Export as markdown
+rethread export abc123 -f markdown -o conversation.md
+
+# Export as structured XML turns
+rethread export abc123 -f turns -o conversation.xml
+
 # Export with selection
 rethread export abc123 -f clean --turns 20    # last 20 turns
-rethread export abc123 -f markdown --prune  # pruned
+rethread export abc123 -f markdown --prune    # pruned
 ```
 
-| Flag     | Short | Default    | Description                                            |
-| -------- | ----- | ---------- | ------------------------------------------------------ |
-| `--format` | `-f`  | `markdown` | Output format: `jsonl`, `clean`, `markdown`              |
-| `--output` | `-o`  | stdout     | Output file path                                       |
-| `--turns`  | `-t`  | `0` (all)  | Export only the last N turns                         |
-| `--prune`  |       | `false`    | Prune low-signal (acknowledgment) turns before export |
+| Flag       | Short | Default | Description                                                  |
+| ---------- | ----- | ------- | ------------------------------------------------------------ |
+| `--format` | `-f`  | `jsonl` | Output format: `jsonl`, `clean`, `markdown`, `turns`         |
+| `--output` | `-o`  | stdout  | Output file path                                             |
+| `--turns`  | `-t`  | `0` (all) | Export only the last N turns                               |
+| `--prune`  |       | `false` | Prune low-signal (acknowledgment) turns before export        |
 
 ## Output Formats
 
-| Format     | Description                                                                          | Use case                                   |
-| ---------- | ------------------------------------------------------------------------------------ | ------------------------------------------ |
-| `jsonl`    | Full native format with all fields (Claude only).                                    | Tooling, backup, exact replay              |
-| `clean`    | Minimal JSONL — keeps `text`, `thinking`, `tool_use`; drops `tool_result`, signatures. | Cross-model use (Gemini, GPT), analysis    |
-| `markdown` | Human-readable with role headers.                                                    | Documentation, review, sharing             |
+| Format     | Description                                                                            | Use case                                |
+| ---------- | -------------------------------------------------------------------------------------- | --------------------------------------- |
+| `jsonl`    | Full native format with all fields (Claude only).                                      | Tooling, backup, exact replay           |
+| `clean`    | Minimal JSONL — keeps `text`, `thinking`, `tool_use`; drops `tool_result`, signatures. | Cross-model use (Gemini, GPT), analysis |
+| `markdown` | Human-readable with role headers and timestamps.                                       | Documentation, review, sharing          |
+| `turns`    | XML structured format with `<conversation>` and `<turn>` tags.                         | LLM prompts, structured pipelines       |
 
 ### `clean` format example
 

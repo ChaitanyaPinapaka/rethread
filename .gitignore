@@ -4,3 +4,12 @@ dist/
 *.jsonl
 .DS_Store
 run.sh
+
+# Go test/build artifacts
+*.test
+*.out
+coverage.html
+
+# Environment files
+.env
+.env.*
