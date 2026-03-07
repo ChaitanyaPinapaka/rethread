@@ -1,0 +1,6 @@
+rethread
+dist/
+*.exe
+*.jsonl
+.DS_Store
+run.sh
