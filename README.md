@@ -8,7 +8,7 @@ AI CLI conversation histories are valuable, but they are often trapped in format
 
 This enables you to:
 -   Document a conversation.
--   Share it with teammates.
+-   Share it with others.
 -   Use it as context for another model or a different AI tool.
 -   Analyze the conversation's structure and content.
 
@@ -22,6 +22,20 @@ This enables you to:
 By default, rethread auto-detects and lists sessions from all installed sources. Use `--source claude` or `--source gemini` to filter.
 
 ## Install
+
+### Quick install (Linux / macOS)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/ChaitanyaPinapaka/rethread/main/install.sh | bash
+```
+
+Downloads the latest pre-built binary and installs to `/usr/local/bin`.
+
+### Download from GitHub Releases
+
+Pre-built binaries for Linux, macOS, and Windows are available on the [Releases](https://github.com/ChaitanyaPinapaka/rethread/releases) page.
+
+### With Go
 
 ```bash
 go install github.com/ChaitanyaPinapaka/rethread@latest
@@ -37,7 +51,7 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 [Environment]::SetEnvironmentVariable("Path", $env:Path + ";" + (go env GOPATH) + "\bin", "User")
 ```
 
-Or build from source:
+### Build from source
 
 ```bash
 git clone https://github.com/ChaitanyaPinapaka/rethread.git
@@ -82,14 +96,13 @@ rethread list -v                     # verbose: show preview and file path
 **Output:**
 
 ```
-  Sessions (6 of 6):
+  Sessions (5 of 5):
 
-  d0873f7a  Mar 07 05:58  268 turns  claude   c--Work-rethread
-  46a4f397  Mar 02 04:36    3 turns  claude   c--Work-personal-blog
-  1c1e0625  Mar 02 04:10  314 turns  claude   c--Work-personal-blog
-  b3cc573d  Feb 17 01:26    8 turns  gemini   gemini:744858f965d4
-  620bb439  Jan 12 05:15    6 turns  gemini   gemini:13905c9c7c3a
-  daeb08c8  Jan 12 04:21    5 turns  gemini   gemini:13905c9c7c3a
+  a1b2c3d4  Mar 05 14:22   42 turns  claude   Work/my-app
+  e5f6a7b8  Mar 03 09:15   18 turns  claude   Projects/api-server
+  c9d0e1f2  Feb 28 11:30    7 turns  gemini   gemini:8f4a2b1c9d3e
+  34ab56cd  Feb 25 16:45   12 turns  gemini   gemini:5e7f1a3b8c2d
+  78ef90ab  Feb 20 08:10    3 turns  claude   Projects/docs-site
 ```
 
 ---
@@ -99,27 +112,27 @@ rethread list -v                     # verbose: show preview and file path
 Analyze a session's turns and get a recommended export strategy.
 
 ```bash
-rethread inspect d0873f7a            # Inspect a Claude Code session
-rethread inspect daeb08c8            # Inspect a Gemini CLI session
+rethread inspect a1b2c3d4            # Inspect a Claude Code session
+rethread inspect c9d0e1f2            # Inspect a Gemini CLI session
 ```
 
 **Output:**
 
 ```
-  Session: d0873f7a-...
-  Project: c--Work-rethread
+  Session: a1b2c3d4-5678-9abc-def0-1234567890ab
+  Project: Work/my-app
 
-  Total turns:      268
-    User:           130
-    Assistant:      138
+  Total turns:      42
+    User:           20
+    Assistant:      22
     Sidechain:      0
-    Low-signal:     5
-  Token estimate:   ~85000
+    Low-signal:     3
+  Token estimate:   ~24000
   Fits in context:  yes
 
   Recommended export strategy:
   - Full export (entire conversation)
-    rethread export d0873f7a -f clean -o d0873f7a-full.jsonl
+    rethread export a1b2c3d4 -f clean -o a1b2c3d4-full.jsonl
 ```
 
 ---
@@ -188,6 +201,10 @@ Three selection strategies are available for export:
 
 When a selection exceeds the context window of most models (~150k tokens), the `inspect` command will recommend a `last N` strategy.
 
+## Disclaimer
+
+This is an independent tool. Not affiliated with or endorsed by Anthropic or Google.
+
 ## License
 
-MIT
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
