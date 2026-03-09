@@ -13,17 +13,7 @@ import (
 var geminiDir string
 
 func init() {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = os.Getenv("HOME")
-		if home == "" {
-			home = os.Getenv("USERPROFILE")
-		}
-		if home == "" {
-			home = filepath.Join(os.Getenv("HOMEDRIVE"), os.Getenv("HOMEPATH"))
-		}
-	}
-	geminiDir = filepath.Join(home, ".gemini", "tmp")
+	geminiDir = filepath.Join(HomeDir(), ".gemini", "tmp")
 }
 
 // GeminiSession is the top-level JSON structure of a Gemini CLI session file.
@@ -209,10 +199,7 @@ func buildGeminiSessionMeta(projectHash, filePath, projectFilter string) (Sessio
 	preview := ""
 	for _, msg := range session.Messages {
 		if msg.Type == "user" {
-			preview = msg.Content
-			if len(preview) > 100 {
-				preview = preview[:100]
-			}
+			preview = TruncatePreview(msg.Content, 100)
 			break
 		}
 	}

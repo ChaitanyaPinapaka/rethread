@@ -32,13 +32,19 @@ func SelectTurns(turns []Turn, strategy SelectionStrategy, tokenBudget int) []Tu
 	case "prune":
 		selected = pruneLowSignal(turns, 0)
 	case "range":
+		from := strategy.From
+		if from < 0 {
+			from = 0
+		}
+		if from > len(turns) {
+			from = len(turns)
+		}
 		to := strategy.To + 1
 		if to > len(turns) {
 			to = len(turns)
 		}
-		from := strategy.From
-		if from < 0 {
-			from = 0
+		if to < from {
+			to = from
 		}
 		selected = make([]Turn, to-from)
 		copy(selected, turns[from:to])
@@ -256,8 +262,8 @@ func recommendStrategy(turns []Turn, totalTokens int) SelectionStrategy {
 		tokens += turns[i].TokenEstimate
 		n++
 	}
-	if n < 4 {
-		n = 4
+	if n < 1 {
+		n = 1
 	}
 
 	return SelectionStrategy{Kind: "last", N: n}

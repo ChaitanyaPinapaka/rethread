@@ -4,55 +4,34 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 )
 
+// ExportStats tracks items dropped or skipped during formatting.
+type ExportStats struct {
+	TurnsInput    int // total turns passed in
+	TurnsOutput   int // turns that made it to output
+	TurnsDropped  int // turns dropped (empty after cleaning, marshal errors)
+	MarshalErrors int // turns skipped due to JSON marshal failures
+}
+
 // FormatForExport formats turns in the requested output format.
-func FormatForExport(turns []Turn, format string, sessionID, projectPath string) string {
+func FormatForExport(turns []Turn, format string, sessionID, projectPath string) (string, ExportStats) {
+	_ = sessionID
+	_ = projectPath
 	switch format {
 	case "jsonl":
 		return formatJSONL(turns)
 	case "clean":
 		return formatCleanJSONL(turns)
-	case "markdown":
-		return formatMarkdown(turns, sessionID, projectPath)
 	default:
-		return formatStructuredTurns(turns, sessionID, projectPath)
+		return formatJSONL(turns)
 	}
-}
-
-// --- structured turns (XML format) ---
-
-func formatTurnStructured(turn Turn) string {
-	ts := ""
-	if turn.Timestamp != "" {
-		ts = fmt.Sprintf(` timestamp="%s"`, turn.Timestamp)
-	}
-	return fmt.Sprintf("<turn role=\"%s\"%s>\n%s\n</turn>", turn.Role, ts, turn.ContentText)
-}
-
-func formatStructuredTurns(turns []Turn, sessionID, projectPath string) string {
-	var b strings.Builder
-
-	if sessionID != "" {
-		b.WriteString(fmt.Sprintf("<!-- rethread export | session: %s | project: %s -->\n\n", sessionID, projectPath))
-	}
-
-	b.WriteString("<conversation>\n\n")
-	for i, turn := range turns {
-		if i > 0 {
-			b.WriteString("\n\n")
-		}
-		b.WriteString(formatTurnStructured(turn))
-	}
-	b.WriteString("\n\n</conversation>")
-
-	return b.String()
 }
 
 // --- JSONL (native Claude Code format) ---
 
-func formatJSONL(turns []Turn) string {
+func formatJSONL(turns []Turn) (string, ExportStats) {
+	stats := ExportStats{TurnsInput: len(turns)}
 	var lines []string
 
 	for _, turn := range turns {
@@ -70,22 +49,27 @@ func formatJSONL(turns []Turn) string {
 
 		data, err := json.Marshal(obj)
 		if err != nil {
+			stats.MarshalErrors++
 			continue
 		}
 		lines = append(lines, string(data))
 	}
 
-	return strings.Join(lines, "\n")
+	stats.TurnsOutput = len(lines)
+	stats.TurnsDropped = stats.TurnsInput - stats.TurnsOutput
+	return strings.Join(lines, "\n"), stats
 }
 
 // --- clean JSONL (text + thinking + tool_use, no tool_result/signatures) ---
 
-func formatCleanJSONL(turns []Turn) string {
+func formatCleanJSONL(turns []Turn) (string, ExportStats) {
+	stats := ExportStats{TurnsInput: len(turns)}
 	var lines []string
 
 	for _, turn := range turns {
 		cleaned := cleanContent(turn.Content)
 		if cleaned == nil {
+			stats.TurnsDropped++
 			continue
 		}
 
@@ -96,12 +80,15 @@ func formatCleanJSONL(turns []Turn) string {
 
 		data, err := json.Marshal(obj)
 		if err != nil {
+			stats.MarshalErrors++
+			stats.TurnsDropped++
 			continue
 		}
 		lines = append(lines, string(data))
 	}
 
-	return strings.Join(lines, "\n")
+	stats.TurnsOutput = len(lines)
+	return strings.Join(lines, "\n"), stats
 }
 
 func cleanContent(content interface{}) interface{} {
@@ -132,16 +119,13 @@ func cleanContent(content interface{}) interface{} {
 				"thinking": m["thinking"],
 			})
 		case "tool_use":
-			cleaned := map[string]interface{}{
+			toolName, _ := m["name"].(string)
+			kept = append(kept, map[string]interface{}{
 				"type":  "tool_use",
-				"name":  m["name"],
-				"input": m["input"],
-			}
-			if id, ok := m["id"]; ok {
-				cleaned["id"] = id
-			}
-			kept = append(kept, cleaned)
-		// tool_result — skip entirely
+				"name":  toolName,
+				"input": condenseToolInput(toolName, m["input"]),
+			})
+			// tool_result — skip entirely
 		}
 	}
 
@@ -151,36 +135,93 @@ func cleanContent(content interface{}) interface{} {
 	return kept
 }
 
-// --- markdown (human-readable) ---
-
-func formatMarkdown(turns []Turn, sessionID, projectPath string) string {
-	var b strings.Builder
-
-	if sessionID != "" {
-		b.WriteString("# Conversation Export\n\n")
-		b.WriteString(fmt.Sprintf("- **Session:** `%s`\n", sessionID))
-		b.WriteString(fmt.Sprintf("- **Project:** `%s`\n", projectPath))
-		b.WriteString(fmt.Sprintf("- **Turns:** %d\n", len(turns)))
-		b.WriteString("- **Exported by:** rethread\n\n---\n\n")
+// condenseToolInput strips heavy content from tool inputs, keeping just
+// enough to understand what action was taken without the full payload.
+func condenseToolInput(toolName string, input interface{}) interface{} {
+	m, ok := input.(map[string]interface{})
+	if !ok {
+		return input
 	}
 
-	for _, turn := range turns {
-		role := "👤 User"
-		if turn.Role == "assistant" {
-			role = "🤖 Assistant"
+	switch toolName {
+	case "Edit":
+		condensed := map[string]interface{}{
+			"file_path": m["file_path"],
 		}
+		if old, ok := m["old_string"].(string); ok {
+			condensed["old_string"] = TruncateField(old, 80)
+		}
+		if nw, ok := m["new_string"].(string); ok {
+			condensed["new_string"] = TruncateField(nw, 80)
+		}
+		if ra, ok := m["replace_all"]; ok {
+			condensed["replace_all"] = ra
+		}
+		return condensed
 
-		ts := ""
-		if turn.Timestamp != "" {
-			if t, err := time.Parse(time.RFC3339Nano, turn.Timestamp); err == nil {
-				ts = fmt.Sprintf(" _%s_", t.Format("Jan 2, 2006 3:04 PM"))
+	case "Write", "NotebookEdit":
+		condensed := map[string]interface{}{
+			"file_path": m["file_path"],
+		}
+		if content, ok := m["content"].(string); ok {
+			lines := strings.Count(content, "\n") + 1
+			condensed["content"] = fmt.Sprintf("[%d lines]", lines)
+		}
+		return condensed
+
+	case "Read":
+		condensed := map[string]interface{}{
+			"file_path": m["file_path"],
+		}
+		if v, ok := m["offset"]; ok {
+			condensed["offset"] = v
+		}
+		if v, ok := m["limit"]; ok {
+			condensed["limit"] = v
+		}
+		return condensed
+
+	case "Bash":
+		condensed := map[string]interface{}{}
+		if cmd, ok := m["command"].(string); ok {
+			condensed["command"] = TruncateField(cmd, 200)
+		}
+		if desc, ok := m["description"].(string); ok {
+			condensed["description"] = desc
+		}
+		return condensed
+
+	case "Grep":
+		condensed := map[string]interface{}{
+			"pattern": m["pattern"],
+		}
+		if v, ok := m["path"]; ok {
+			condensed["path"] = v
+		}
+		if v, ok := m["glob"]; ok {
+			condensed["glob"] = v
+		}
+		return condensed
+
+	case "Glob":
+		condensed := map[string]interface{}{
+			"pattern": m["pattern"],
+		}
+		if v, ok := m["path"]; ok {
+			condensed["path"] = v
+		}
+		return condensed
+
+	default:
+		// Unknown tool — truncate any string values over 200 chars
+		condensed := make(map[string]interface{}, len(m))
+		for k, v := range m {
+			if s, ok := v.(string); ok && len(s) > 200 {
+				condensed[k] = TruncateField(s, 200)
+			} else {
+				condensed[k] = v
 			}
 		}
-
-		b.WriteString(fmt.Sprintf("### %s%s\n\n", role, ts))
-		b.WriteString(turn.ContentText)
-		b.WriteString("\n\n")
+		return condensed
 	}
-
-	return b.String()
 }

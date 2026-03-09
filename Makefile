@@ -1,7 +1,7 @@
 BINARY   := rethread
 MODULE   := github.com/ChaitanyaPinapaka/rethread
-VERSION  := 0.1.0
-LDFLAGS  := -s -w -X main.version=$(VERSION)
+VERSION  := 0.1.1
+LDFLAGS  := -s -w -X $(MODULE)/cmd.version=$(VERSION)
 
 .PHONY: build install clean tidy test
 

@@ -94,10 +94,10 @@ func TestExport_PruneStrategy(t *testing.T) {
 func TestExport_StrategySelection(t *testing.T) {
 	// Test the strategy selection logic from runExport
 	tests := []struct {
-		name       string
-		turnFlag   int
-		pruneFlag  bool
-		wantKind   string
+		name      string
+		turnFlag  int
+		pruneFlag bool
+		wantKind  string
 	}{
 		{"default is full", 0, false, "full"},
 		{"turns flag sets last", 5, false, "last"},
@@ -128,7 +128,7 @@ func TestExport_FormatJSONL(t *testing.T) {
 
 	turns := readTestTurns(t, sessionFile)
 	selected := internal.SelectTurns(turns, internal.SelectionStrategy{Kind: "full"}, 1<<30)
-	content := internal.FormatForExport(selected, "jsonl", "test-sess", "/test/project")
+	content, _ := internal.FormatForExport(selected, "jsonl", "test-sess", "/test/project")
 
 	lines := strings.Split(strings.TrimSpace(content), "\n")
 	if len(lines) != 4 {
@@ -150,7 +150,7 @@ func TestExport_FormatClean(t *testing.T) {
 
 	turns := readTestTurns(t, sessionFile)
 	selected := internal.SelectTurns(turns, internal.SelectionStrategy{Kind: "full"}, 1<<30)
-	content := internal.FormatForExport(selected, "clean", "test-sess", "/test/project")
+	content, _ := internal.FormatForExport(selected, "clean", "test-sess", "/test/project")
 
 	lines := strings.Split(strings.TrimSpace(content), "\n")
 	if len(lines) != 4 {
@@ -170,46 +170,6 @@ func TestExport_FormatClean(t *testing.T) {
 	}
 }
 
-func TestExport_FormatMarkdown(t *testing.T) {
-	dir := t.TempDir()
-	sessionFile := filepath.Join(dir, "session.jsonl")
-	writeTestSession(t, sessionFile, 4)
-
-	turns := readTestTurns(t, sessionFile)
-	selected := internal.SelectTurns(turns, internal.SelectionStrategy{Kind: "full"}, 1<<30)
-	content := internal.FormatForExport(selected, "markdown", "test-sess", "/test/project")
-
-	if !strings.Contains(content, "# Conversation Export") {
-		t.Error("markdown should contain header")
-	}
-	if !strings.Contains(content, "test-sess") {
-		t.Error("markdown should contain session ID")
-	}
-	if !strings.Contains(content, "4") {
-		t.Error("markdown should contain turn count")
-	}
-}
-
-func TestExport_FormatTurns(t *testing.T) {
-	dir := t.TempDir()
-	sessionFile := filepath.Join(dir, "session.jsonl")
-	writeTestSession(t, sessionFile, 2)
-
-	turns := readTestTurns(t, sessionFile)
-	selected := internal.SelectTurns(turns, internal.SelectionStrategy{Kind: "full"}, 1<<30)
-	content := internal.FormatForExport(selected, "turns", "test-sess", "/test/project")
-
-	if !strings.Contains(content, "<conversation>") {
-		t.Error("turns format should contain <conversation>")
-	}
-	if !strings.Contains(content, `<turn role="user"`) {
-		t.Error("turns format should contain user turn")
-	}
-	if !strings.Contains(content, `<turn role="assistant"`) {
-		t.Error("turns format should contain assistant turn")
-	}
-}
-
 func TestExport_WriteToFile(t *testing.T) {
 	dir := t.TempDir()
 	sessionFile := filepath.Join(dir, "session.jsonl")
@@ -217,7 +177,7 @@ func TestExport_WriteToFile(t *testing.T) {
 
 	turns := readTestTurns(t, sessionFile)
 	selected := internal.SelectTurns(turns, internal.SelectionStrategy{Kind: "full"}, 1<<30)
-	content := internal.FormatForExport(selected, "jsonl", "test-sess", "/test/project")
+	content, _ := internal.FormatForExport(selected, "jsonl", "test-sess", "/test/project")
 
 	outFile := filepath.Join(dir, "output.jsonl")
 	if err := os.WriteFile(outFile, []byte(content), 0644); err != nil {

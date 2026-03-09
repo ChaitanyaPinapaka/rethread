@@ -17,17 +17,7 @@ var (
 )
 
 func init() {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		// Fallback chain for cross-platform compatibility
-		home = os.Getenv("HOME")
-		if home == "" {
-			home = os.Getenv("USERPROFILE")
-		}
-		if home == "" {
-			home = filepath.Join(os.Getenv("HOMEDRIVE"), os.Getenv("HOMEPATH"))
-		}
-	}
+	home := HomeDir()
 	claudeDir = filepath.Join(home, ".claude")
 	projectsDir = filepath.Join(claudeDir, "projects")
 }
@@ -144,29 +134,6 @@ func ReadTurns(filePath string, includeSidechains bool) ([]Turn, error) {
 	return turns, nil
 }
 
-// ExtractText pulls plain text from a message content field.
-// Content can be a string or an array of content blocks.
-func ExtractText(content interface{}) string {
-	switch v := content.(type) {
-	case string:
-		return v
-	case []interface{}:
-		var parts []string
-		for _, block := range v {
-			if m, ok := block.(map[string]interface{}); ok {
-				if m["type"] == "text" {
-					if text, ok := m["text"].(string); ok {
-						parts = append(parts, text)
-					}
-				}
-			}
-		}
-		return strings.Join(parts, "\n")
-	default:
-		return fmt.Sprintf("%v", content)
-	}
-}
-
 // --- internal helpers ---
 
 func decodeProjectPath(encoded string) string {
@@ -231,12 +198,7 @@ func buildSessionMeta(sessionID, encodedPath, decodedPath, filePath string) (Ses
 		}
 
 		if preview == "" && event.Type == "user" {
-			text := ExtractText(event.Message.Content)
-			if len(text) > 100 {
-				preview = text[:100]
-			} else {
-				preview = text
-			}
+			preview = TruncatePreview(ExtractText(event.Message.Content), 100)
 		}
 	}
 

@@ -4,7 +4,7 @@ Selective export of AI CLI conversations from **Claude Code** and **Gemini CLI**
 
 ## The Problem
 
-AI CLI conversation histories are valuable, but they are often trapped in formats that are difficult to reuse. `rethread` allows you to list, inspect, and export these sessions into clean, usable formats like Markdown or minimal JSONL.
+AI CLI conversation histories are valuable, but they are often trapped in formats that are difficult to reuse. `rethread` allows you to list, inspect, and export these sessions into clean, usable JSONL.
 
 This enables you to:
 -   Document a conversation.
@@ -148,32 +148,42 @@ rethread export abc123 -o conversation.jsonl
 # Export as "clean" JSONL (ideal for cross-model use)
 rethread export abc123 -f clean -o cleaned.jsonl
 
-# Export as markdown
-rethread export abc123 -f markdown -o conversation.md
-
-# Export as structured XML turns
-rethread export abc123 -f turns -o conversation.xml
-
 # Export with selection
 rethread export abc123 -f clean --turns 20    # last 20 turns
-rethread export abc123 -f markdown --prune    # pruned
+rethread export abc123 -f clean --range 10-20 # inclusive turn range
+rethread export abc123 -f clean --prune       # pruned
 ```
 
 | Flag       | Short | Default | Description                                                  |
 | ---------- | ----- | ------- | ------------------------------------------------------------ |
-| `--format` | `-f`  | `jsonl` | Output format: `jsonl`, `clean`, `markdown`, `turns`         |
+| `--format` | `-f`  | `jsonl` | Output format: `jsonl`, `clean`                              |
 | `--output` | `-o`  | stdout  | Output file path                                             |
 | `--turns`  | `-t`  | `0` (all) | Export only the last N turns                               |
+| `--range`  |       |         | Export an inclusive turn range like `10-20`                  |
 | `--prune`  |       | `false` | Prune low-signal (acknowledgment) turns before export        |
+
+---
+
+### `rethread validate`
+
+Measure how much the `clean` format reduces export size while preserving key conversation content.
+
+```bash
+rethread validate a1b2c3d4
+```
+
+The report includes:
+- raw vs compact byte size
+- per-block savings breakdown
+- dropped-turn counts
+- quality checks for preserved user text, assistant text, file paths, turn order, and non-empty output
 
 ## Output Formats
 
 | Format     | Description                                                                            | Use case                                |
 | ---------- | -------------------------------------------------------------------------------------- | --------------------------------------- |
-| `jsonl`    | Full native format with all fields (Claude only).                                      | Tooling, backup, exact replay           |
+| `jsonl`    | Normalized event JSONL with full turn fields preserved across supported sources.        | Tooling, backup, replay/import          |
 | `clean`    | Minimal JSONL — keeps `text`, `thinking`, `tool_use`; drops `tool_result`, signatures. | Cross-model use (Gemini, GPT), analysis |
-| `markdown` | Human-readable with role headers and timestamps.                                       | Documentation, review, sharing          |
-| `turns`    | XML structured format with `<conversation>` and `<turn>` tags.                         | LLM prompts, structured pipelines       |
 
 ### `clean` format example
 
@@ -191,12 +201,13 @@ Both Claude and Gemini sessions are normalized to this same unified format.
 `rethread` reads local conversation history and normalizes it into a common `Turn` structure, so selection and export work identically regardless of the source.
 
 ### Selecting
-Three selection strategies are available for export:
+Four selection strategies are available for export:
 
 | Strategy   | Flag        | What it does                                                                       |
 | ---------- | ----------- | ---------------------------------------------------------------------------------- |
 | Full       | *(default)* | Every turn, verbatim.                                                              |
 | Last N     | `--turns N` | The most recent N turns.                                                           |
+| Range      | `--range A-B` | Export turns from index `A` through `B` (inclusive).                            |
 | Prune      | `--prune`   | Drops simple acknowledgment turns (e.g., "ok", "sounds good", "got it"). |
 
 When a selection exceeds the context window of most models (~150k tokens), the `inspect` command will recommend a `last N` strategy.

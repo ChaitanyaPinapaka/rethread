@@ -3,6 +3,8 @@ version: 2
 builds:
   - main: .
     binary: rethread
+    ldflags:
+      - -s -w -X github.com/ChaitanyaPinapaka/rethread/cmd.version={{ .Version }}
     env:
       - CGO_ENABLED=0
     goos:
@@ -22,6 +24,15 @@ archives:
 
 checksum:
   name_template: "checksums.txt"
+
+release:
+  header: |
+    ## What's New in {{ .Tag }}
+
+    - Clean format now condenses tool inputs (Edit, Write, Read, Bash, Grep, Glob) for major token savings
+    - New `rethread validate` command — measures reduction quality with per-block stats and 6 quality checks
+    - `--range` flag for exporting specific turn ranges (`--range 10-20`)
+    - Removed markdown/turns formats — JSONL and clean only
 
 changelog:
   sort: asc

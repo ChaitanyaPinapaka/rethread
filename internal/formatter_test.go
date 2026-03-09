@@ -12,7 +12,7 @@ func TestFormatForExport_JSONL(t *testing.T) {
 		{Role: "assistant", Content: "hi", ContentText: "hi", Timestamp: "2024-01-01T00:01:00Z", UUID: "u2"},
 	}
 
-	result := FormatForExport(turns, "jsonl", "sess1", "/project")
+	result, _ := FormatForExport(turns, "jsonl", "sess1", "/project")
 	lines := strings.Split(result, "\n")
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 JSONL lines, got %d", len(lines))
@@ -40,7 +40,7 @@ func TestFormatForExport_CleanJSONL(t *testing.T) {
 		},
 	}
 
-	result := FormatForExport(turns, "clean", "sess1", "/project")
+	result, _ := FormatForExport(turns, "clean", "sess1", "/project")
 
 	var obj map[string]interface{}
 	if err := json.Unmarshal([]byte(result), &obj); err != nil {
@@ -64,61 +64,30 @@ func TestFormatForExport_CleanJSONL(t *testing.T) {
 	if len(blocks) != 2 {
 		t.Errorf("expected 2 blocks (text + tool_use), got %d", len(blocks))
 	}
-}
 
-func TestFormatForExport_Markdown(t *testing.T) {
-	turns := []Turn{
-		{Role: "user", ContentText: "explain X", Timestamp: "2024-01-15T14:30:00Z"},
-		{Role: "assistant", ContentText: "X is a thing"},
-	}
-
-	result := FormatForExport(turns, "markdown", "sess1", "/project")
-
-	if !strings.Contains(result, "# Conversation Export") {
-		t.Error("markdown should contain header")
-	}
-	if !strings.Contains(result, "sess1") {
-		t.Error("markdown should contain session ID")
-	}
-	if !strings.Contains(result, "explain X") {
-		t.Error("markdown should contain turn content")
-	}
-	if !strings.Contains(result, "User") {
-		t.Error("markdown should contain User role")
-	}
-	if !strings.Contains(result, "Assistant") {
-		t.Error("markdown should contain Assistant role")
+	// id should be stripped in clean format
+	for _, b := range blocks {
+		m := b.(map[string]interface{})
+		if m["type"] == "tool_use" {
+			if _, hasID := m["id"]; hasID {
+				t.Error("clean format should strip tool_use id")
+			}
+		}
 	}
 }
 
-func TestFormatForExport_Turns(t *testing.T) {
+func TestFormatForExport_UnknownFormatFallsBackToJSONL(t *testing.T) {
 	turns := []Turn{
-		{Role: "user", ContentText: "hello", Timestamp: "2024-01-01T00:00:00Z"},
-		{Role: "assistant", ContentText: "hi"},
+		{Role: "user", Content: "hello", ContentText: "hello"},
 	}
 
-	result := FormatForExport(turns, "turns", "sess1", "/project")
-
-	if !strings.Contains(result, "<conversation>") {
-		t.Error("turns format should contain <conversation> tag")
+	result, _ := FormatForExport(turns, "unknown_format", "s1", "/p")
+	var obj map[string]interface{}
+	if err := json.Unmarshal([]byte(result), &obj); err != nil {
+		t.Fatalf("unknown format should still produce JSONL, got error: %v", err)
 	}
-	if !strings.Contains(result, "<turn role=\"user\"") {
-		t.Error("turns format should contain <turn> tags")
-	}
-	if !strings.Contains(result, "</conversation>") {
-		t.Error("turns format should contain closing </conversation> tag")
-	}
-}
-
-func TestFormatForExport_DefaultFormat(t *testing.T) {
-	turns := []Turn{
-		{Role: "user", ContentText: "hello"},
-	}
-
-	// Unknown format falls through to structured turns
-	result := FormatForExport(turns, "unknown_format", "s1", "/p")
-	if !strings.Contains(result, "<conversation>") {
-		t.Error("unknown format should fall back to structured turns")
+	if obj["type"] != "user" {
+		t.Errorf("expected user JSONL output, got %v", obj["type"])
 	}
 }
 
@@ -171,26 +140,159 @@ func TestCleanContent_EmptyBlocks(t *testing.T) {
 	}
 }
 
-// --- formatMarkdown timestamp ---
+// --- clean format condensing ---
 
-func TestFormatMarkdown_WithTimestamp(t *testing.T) {
-	turns := []Turn{
-		{Role: "user", ContentText: "hello", Timestamp: "2024-06-15T14:30:00.123Z"},
+func TestCleanContent_CondensesEdit(t *testing.T) {
+	longOld := strings.Repeat("x", 500)
+	longNew := strings.Repeat("y", 500)
+	content := []interface{}{
+		map[string]interface{}{
+			"type":  "tool_use",
+			"name":  "Edit",
+			"id":    "t1",
+			"input": map[string]interface{}{"file_path": "main.go", "old_string": longOld, "new_string": longNew},
+		},
 	}
 
-	result := formatMarkdown(turns, "", "")
-	if !strings.Contains(result, "Jun 15, 2024") {
-		t.Errorf("expected formatted timestamp, got: %s", result)
+	result := cleanContent(content)
+	blocks := result.([]interface{})
+	m := blocks[0].(map[string]interface{})
+	input := m["input"].(map[string]interface{})
+
+	// old_string and new_string should be truncated
+	old := input["old_string"].(string)
+	if len(old) >= 500 {
+		t.Errorf("clean should truncate old_string, got len %d", len(old))
+	}
+	if !strings.Contains(old, "more chars") {
+		t.Error("truncated field should have [...N more chars] marker")
+	}
+
+	// id should be stripped
+	if _, hasID := m["id"]; hasID {
+		t.Error("clean format should strip tool_use id")
 	}
 }
 
-func TestFormatMarkdown_WithoutTimestamp(t *testing.T) {
-	turns := []Turn{
-		{Role: "assistant", ContentText: "response"},
+func TestCleanContent_CondensesWrite(t *testing.T) {
+	bigContent := strings.Repeat("line\n", 100)
+	content := []interface{}{
+		map[string]interface{}{
+			"type":  "tool_use",
+			"name":  "Write",
+			"input": map[string]interface{}{"file_path": "out.go", "content": bigContent},
+		},
 	}
 
-	result := formatMarkdown(turns, "", "")
-	if !strings.Contains(result, "Assistant") {
-		t.Error("should contain Assistant role")
+	result := cleanContent(content)
+	blocks := result.([]interface{})
+	m := blocks[0].(map[string]interface{})
+	input := m["input"].(map[string]interface{})
+
+	c := input["content"].(string)
+	if !strings.Contains(c, "lines]") {
+		t.Errorf("clean Write should show line count, got: %s", c)
+	}
+}
+
+func TestCleanContent_KeepsReadPath(t *testing.T) {
+	content := []interface{}{
+		map[string]interface{}{
+			"type":  "tool_use",
+			"name":  "Read",
+			"input": map[string]interface{}{"file_path": "/src/main.go", "offset": 10.0, "limit": 50.0},
+		},
+	}
+
+	result := cleanContent(content)
+	blocks := result.([]interface{})
+	m := blocks[0].(map[string]interface{})
+	input := m["input"].(map[string]interface{})
+
+	if input["file_path"] != "/src/main.go" {
+		t.Error("clean Read should keep file_path")
+	}
+	if input["offset"] != 10.0 {
+		t.Error("clean Read should keep offset")
+	}
+}
+
+func TestCondenseToolInput_UnknownTool(t *testing.T) {
+	longVal := strings.Repeat("z", 300)
+	input := map[string]interface{}{
+		"short_key": "small",
+		"long_key":  longVal,
+	}
+
+	result := condenseToolInput("SomeCustomTool", input)
+	m := result.(map[string]interface{})
+
+	if m["short_key"] != "small" {
+		t.Error("short values should be kept as-is")
+	}
+	truncated := m["long_key"].(string)
+	if len(truncated) >= 300 {
+		t.Errorf("long values in unknown tools should be truncated, got len %d", len(truncated))
+	}
+}
+
+func TestTruncateField(t *testing.T) {
+	short := "hello"
+	if TruncateField(short, 80) != "hello" {
+		t.Error("short strings should not be truncated")
+	}
+
+	long := strings.Repeat("a", 200)
+	result := TruncateField(long, 80)
+	if len(result) > 120 { // 80 + marker
+		t.Errorf("truncated string too long: %d", len(result))
+	}
+	if !strings.Contains(result, "120 more chars") {
+		t.Errorf("expected marker with 120 more chars, got: %s", result)
+	}
+}
+
+// --- ExportStats ---
+
+func TestFormatForExport_CleanStats(t *testing.T) {
+	turns := []Turn{
+		{Role: "user", Content: "hello", ContentText: "hello"},
+		{
+			Role: "assistant",
+			Content: []interface{}{
+				map[string]interface{}{"type": "tool_result", "content": "ok"},
+			},
+			ContentText: "",
+		},
+		{Role: "assistant", Content: "bye", ContentText: "bye"},
+	}
+
+	_, stats := FormatForExport(turns, "clean", "s1", "/p")
+	if stats.TurnsInput != 3 {
+		t.Errorf("expected 3 input turns, got %d", stats.TurnsInput)
+	}
+	if stats.TurnsOutput != 2 {
+		t.Errorf("expected 2 output turns (tool_result-only dropped), got %d", stats.TurnsOutput)
+	}
+	if stats.TurnsDropped != 1 {
+		t.Errorf("expected 1 dropped turn, got %d", stats.TurnsDropped)
+	}
+}
+
+func TestFormatForExport_JSONLStats(t *testing.T) {
+	turns := []Turn{
+		{Role: "user", Content: "hello", ContentText: "hello"},
+		{Role: "assistant", Content: "bye", ContentText: "bye"},
+	}
+
+	_, stats := FormatForExport(turns, "jsonl", "s1", "/p")
+	if stats.TurnsInput != 2 {
+		t.Errorf("expected 2 input turns, got %d", stats.TurnsInput)
+	}
+	if stats.TurnsOutput != 2 {
+		t.Errorf("expected 2 output turns, got %d", stats.TurnsOutput)
+	}
+	if stats.TurnsDropped != 0 {
+		t.Errorf("expected 0 dropped turns, got %d", stats.TurnsDropped)
 	}
 }

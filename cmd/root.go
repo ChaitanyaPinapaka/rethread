@@ -10,6 +10,7 @@ import (
 )
 
 var source string
+var version = "dev"
 
 var rootCmd = &cobra.Command{
 	Use:   "rethread",
@@ -19,7 +20,7 @@ var rootCmd = &cobra.Command{
 Supports Claude Code and Gemini CLI.
 Preserves turn structure, reasoning texture, and conversation shape.
 No summarization, no flattening. Select, prune, and export.`,
-	Version: "0.1.0",
+	Version: version,
 }
 
 func Execute() {
@@ -34,6 +35,7 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(inspectCmd)
 	rootCmd.AddCommand(exportCmd)
+	rootCmd.AddCommand(validateCmd)
 }
 
 // resolvedSource returns the effective source(s) to query.

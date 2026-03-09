@@ -93,6 +93,19 @@ func TestSelectTurns_Range(t *testing.T) {
 	}
 }
 
+func TestSelectTurns_RangeOutOfBoundsReturnsEmpty(t *testing.T) {
+	turns := makeTurns(
+		[]string{"user", "assistant", "user"},
+		[]string{"a", "b", "c"},
+		[]int{10, 10, 10},
+	)
+
+	selected := SelectTurns(turns, SelectionStrategy{Kind: "range", From: 10, To: 20}, 1<<30)
+	if len(selected) != 0 {
+		t.Fatalf("expected 0 turns for out-of-bounds range, got %d", len(selected))
+	}
+}
+
 func TestSelectTurns_DefaultStrategy(t *testing.T) {
 	turns := makeTurns([]string{"user", "assistant"}, []string{"a", "b"}, []int{10, 10})
 

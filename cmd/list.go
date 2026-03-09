@@ -83,9 +83,10 @@ func runList(cmd *cobra.Command, args []string) error {
 }
 
 func shortProject(p string) string {
-	parts := strings.Split(filepath.ToSlash(p), "/")
+	normalized := filepath.ToSlash(p)
+	parts := strings.Split(normalized, "/")
 	if len(parts) <= 2 {
-		return p
+		return normalized
 	}
 	return strings.Join(parts[len(parts)-2:], "/")
 }
